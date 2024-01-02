@@ -6,15 +6,48 @@ const Player = () => {
   const [selectedNumbers, setSelectedNumbers] = useState([]);
   const [balance, setBalance] = useState(0);
   const [activeTab, setActiveTab] = useState("lottery");
+  const [lotteries, setLotteries] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [lotteriesPerPage] = useState(5);
+  const [sortOrder, setSortOrder] = useState("asc");
+  const [totalEarnings, setTotalEarnings] = useState(0);
+
+  const handleSort = () => {
+    const sortedLotteries = lotteries
+      .filter((lottery) => lottery.wasDrawn)
+      .sort((a, b) => {
+        if (sortOrder === "asc") {
+          return a.correctlyGuessed - b.correctlyGuessed;
+        } else {
+          return b.correctlyGuessed - a.correctlyGuessed;
+        }
+      });
+    setLotteries(sortedLotteries);
+    setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+  };
 
   useEffect(() => {
     const storedPlayerName = localStorage.getItem("player_name");
     const storedBalance = localStorage.getItem("balance");
+    const storedLotteries = JSON.parse(
+      localStorage.getItem("lotteries") || "[]"
+    );
     if (storedPlayerName) {
       setSavedPlayer(storedPlayerName);
       setBalance(storedBalance);
+      setLotteries(storedLotteries);
     }
   }, []);
+
+  useEffect(() => {
+    const earnings = lotteries
+      .filter((lottery) => lottery.wasDrawn && !lottery.generated)
+      .reduce(
+        (accumulator, currentValue) => accumulator + currentValue.prize,
+        0
+      );
+    setTotalEarnings(earnings || 0);
+  }, [lotteries]);
 
   const savePlayer = () => {
     localStorage.setItem("player_name", playerName);
@@ -41,15 +74,16 @@ const Player = () => {
         const lotteryId = generateLotteryId();
         localStorage.setItem("balance", balance - 500);
         setBalance(balance - 500);
-        const lotteries = JSON.parse(localStorage.getItem("lotteries") || "[]");
-        lotteries.push({
+        const newLottery = {
           id: lotteryId,
           createdAt: Date.now(),
           numbers: selectedNumbers,
           generated: false,
           wasDrawn: false,
-        });
-        localStorage.setItem("lotteries", JSON.stringify(lotteries));
+        };
+        const updatedLotteries = [...lotteries, newLottery];
+        localStorage.setItem("lotteries", JSON.stringify(updatedLotteries));
+        setLotteries(updatedLotteries);
         localStorage.setItem(
           "operator_balance",
           parseInt(localStorage.getItem("operator_balance")) + 500
@@ -70,11 +104,33 @@ const Player = () => {
     setActiveTab(tab);
   };
 
+  const indexOfLastLottery = currentPage * lotteriesPerPage;
+  const indexOfFirstLottery = indexOfLastLottery - lotteriesPerPage;
+  const currentLotteries = lotteries
+    .filter((lottery) => !lottery.generated)
+    .slice(indexOfFirstLottery, indexOfLastLottery);
+
+  const paginate = (pageNumber) => {
+    if (
+      pageNumber >= 1 &&
+      pageNumber <=
+        Math.ceil(
+          lotteries.filter((lottery) => !lottery.generated).length /
+            lotteriesPerPage
+        )
+    ) {
+      setCurrentPage(pageNumber);
+    }
+  };
+  console.log(currentLotteries);
+
   return (
-    <div className="bg-gray-900 w-screen h-screen">
-      <div className="flex justify-center h-screen items-center">
-        <div className="flex flex-col justify-center items-center">
-          <div className="flex space-x-4 mb-4">
+    <div className="bg-gray-900">
+      <div className="flex justify-center h-screen pt-5">
+        <div className="flex flex-col items-center space-y-3 text-center">
+          <h1 className="text-3xl text-white font-bold">Játékos</h1>
+          <h2 className="text-xl text-white">Egyenleg: {balance} akcse</h2>
+          <div className="flex justify-center w-screen space-x-3">
             <button
               onClick={() => handleTabChange("lottery")}
               className={`${
@@ -149,30 +205,100 @@ const Player = () => {
           )}
           {activeTab === "history" && (
             <div className="text-white">
-              <h1 className="text-3xl text-white font-bold">
+              <h1 className="text-3xl text-white font-bold mb-2">
                 Megtett szelvényeim
               </h1>
-              <div className="flex flex-col space-y-2">
-                {JSON.parse(localStorage.getItem("lotteries") || "[]").map(
-                  (lottery) => (
-                    <div key={lottery.id}>
-                      <p className="text-xl">{lottery.numbers.join(", ")}</p>
-                      <span>
+              <h2 className="text-xl text-white font-bold mb-2">
+                Összesített nyeremény: {totalEarnings} akcse
+              </h2>
+              <table className="border-collapse border border-white">
+                <thead>
+                  <tr>
+                    <th className="border border-white p-2">Szelvény</th>
+                    <th className="border border-white p-2">Létrehozva</th>
+                    <th className="border border-white p-2">
+                      <button
+                        onClick={handleSort}
+                        className="text-white font-bold"
+                      >
+                        Státusz {sortOrder === "asc" ? "▲" : "▼"}
+                      </button>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentLotteries.map((lottery) => (
+                    <tr key={lottery.id}>
+                      <td className="border border-white p-2">
+                        {lottery.numbers.join(", ")}
+                      </td>
+                      <td className="border border-white p-2">
                         {new Date(lottery.createdAt).toLocaleString()}
-                      </span>
-                      {lottery.wasDrawn ? (
-                        <span className="text-green-500">
-                          Kihúzott számok: {lottery.drawnNumbers.join(", ")}
-                        </span>
-                      ) : (
-                        <span className="text-red-500">
-                          Nem volt még sorosolás
-                        </span>
-                      )}
-                      <hr />
-                    </div>
-                  )
-                )}
+                      </td>
+                      <td className="border border-white p-2">
+                        {lottery.wasDrawn ? (
+                          <>
+                            <p className="text-green-500 font-bold">Sorsolva</p>
+                            <p className="text-white">
+                              Nyertes számok: {lottery.drawnNumbers.join(", ")}
+                            </p>
+                            <p className="text-white">
+                              Találatok: {lottery.correctlyGuessed}
+                            </p>
+                            <p className="text-white">
+                              Nyeremény: {lottery.prize} akcse
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-yellow-500">Sorsolásra vár</p>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="flex justify-center mt-4">
+                <button>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-6 w-6 text-white"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    onClick={() => paginate(currentPage - 1)}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 19l-7-7 7-7"
+                    />
+                  </svg>
+                </button>
+                <p className="text-white mx-4">
+                  {currentPage} /{" "}
+                  {Math.ceil(
+                    lotteries.filter((lottery) => !lottery.generated).length /
+                      lotteriesPerPage
+                  )}
+                </p>
+                <button>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-6 w-6 text-white"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    onClick={() => paginate(currentPage + 1)}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 5l7 7-7 7"
+                    />
+                  </svg>
+                </button>
               </div>
             </div>
           )}
